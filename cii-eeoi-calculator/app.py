@@ -119,6 +119,10 @@ with st.container(key="speed_fuel_container"):
         num_rows="dynamic",
         width="stretch",
         key="speed_fuel_table",
+        column_config={
+            "Speed (knots)": st.column_config.NumberColumn(width=110),
+            "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=180),
+        },
     )
 
 speed_fuel_df = speed_fuel_df.dropna().sort_values("Speed (knots)")
@@ -148,12 +152,14 @@ with st.container(key="legs_container"):
         width="stretch",
         key="legs_table",
         column_config={
-            "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True),
-            "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True),
-            "Sailing Days": st.column_config.NumberColumn(min_value=0.0),
-            "Port Days": st.column_config.NumberColumn(min_value=0.0),
-            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0),
-            "Cargo Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0),
+            "Departure Port": st.column_config.TextColumn(width=120),
+            "Arrival Port": st.column_config.TextColumn(width=120),
+            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=75),
+            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0, width=75),
+            "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=75),
+            "Port Days": st.column_config.NumberColumn(min_value=0.0, width=75),
+            "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=75),
+            "Cargo Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, width=85),
         },
     )
 
@@ -228,7 +234,26 @@ if results_df.empty:
     st.info("Add at least one voyage leg above to see results.")
 else:
     with st.container(key="results_container"):
-        st.dataframe(results_df, width="stretch")
+        st.dataframe(
+            results_df,
+            width="stretch",
+            column_config={
+                "Departure Port": st.column_config.TextColumn(width=95),
+                "Arrival Port": st.column_config.TextColumn(width=95),
+                "Sailing Days": st.column_config.NumberColumn(width=65),
+                "Speed (knots)": st.column_config.NumberColumn(width=65),
+                "Distance (nm)": st.column_config.NumberColumn(width=75),
+                "Fuel Type (Sailing)": st.column_config.TextColumn(width=70),
+                "Sailing Fuel (MT)": st.column_config.NumberColumn(width=80),
+                "Port Days": st.column_config.NumberColumn(width=65),
+                "Fuel Type (Port)": st.column_config.TextColumn(width=70),
+                "Port Fuel (MT)": st.column_config.NumberColumn(width=75),
+                "Total Fuel (MT)": st.column_config.NumberColumn(width=80),
+                "CO2 Emissions (t)": st.column_config.NumberColumn(width=85),
+                "Cargo Weight (%)": st.column_config.NumberColumn(width=75),
+                "Cargo Weight (t)": st.column_config.NumberColumn(width=80),
+            },
+        )
 
 # ---------------------------------------------------------------------------
 # Voyage totals, CII and EEOI
