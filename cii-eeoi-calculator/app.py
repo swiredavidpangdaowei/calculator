@@ -19,7 +19,7 @@ st.markdown(
     }
     .block-container {
         padding-left: 3rem !important;
-        padding-right: 3rem !important;
+        padding-right: 6rem !important;
     }
     </style>
     """,
@@ -121,11 +121,11 @@ with st.container(key="speed_fuel_container"):
     speed_fuel_df = st.data_editor(
         default_speed_fuel,
         num_rows="dynamic",
-        width=300,
+        width=400,
         key="speed_fuel_table",
         column_config={
-            "Speed (knots)": st.column_config.NumberColumn(width=150, alignment="left"),
-            "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=150, alignment="left"),
+            "Speed (knots)": st.column_config.NumberColumn(width=200, alignment="left"),
+            "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=200, alignment="left"),
         },
     )
 
@@ -242,20 +242,19 @@ else:
             results_df,
             width="stretch",
             column_config={
-                "Departure Port": st.column_config.TextColumn(width=100),
-                "Arrival Port": st.column_config.TextColumn(width=100),
+                "Departure Port": st.column_config.TextColumn(width=150),
+                "Arrival Port": st.column_config.TextColumn(width=150),
                 "Sailing Days": st.column_config.NumberColumn(width=100, alignment="left"),
                 "Speed (knots)": st.column_config.NumberColumn(width=100, alignment="left"),
                 "Distance (nm)": st.column_config.NumberColumn(width=100, alignment="left"),
-                "Fuel Type (Sailing)": st.column_config.TextColumn(width=100),
-                "Sailing Fuel (MT)": st.column_config.NumberColumn(width=100, alignment="left"),
-                "Port Days": st.column_config.NumberColumn(width=100, alignment="left"),
-                "Fuel Type (Port)": st.column_config.TextColumn(width=100),
+                "Fuel Type (Sailing)": st.column_config.TextColumn(width=110),
+                "Sailing Fuel (MT)": st.column_config.NumberColumn(width=110, alignment="left"),
+                "Port Days": st.column_config.NumberColumn(width=80, alignment="left"),
+                "Fuel Type (Port)": st.column_config.TextColumn(width=110),
                 "Port Fuel (MT)": st.column_config.NumberColumn(width=100, alignment="left"),
                 "Total Fuel (MT)": st.column_config.NumberColumn(width=100, alignment="left"),
-                "CO2 Emissions (t)": st.column_config.NumberColumn(width=100, alignment="left"),
-                "Cargo Weight (%)": st.column_config.NumberColumn(width=100, alignment="left"),
-                "Cargo Weight (t)": st.column_config.NumberColumn(width=100, alignment="left"),
+                "CO2 Emissions (t)": st.column_config.NumberColumn(width=120, alignment="left"),
+                "Cargo Weight (t)": st.column_config.NumberColumn(width=120, alignment="left"),
             },
         )
 
