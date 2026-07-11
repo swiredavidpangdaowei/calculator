@@ -117,11 +117,11 @@ with st.container(key="speed_fuel_container"):
     speed_fuel_df = st.data_editor(
         default_speed_fuel,
         num_rows="dynamic",
-        width="stretch",
+        width=200,
         key="speed_fuel_table",
         column_config={
-            "Speed (knots)": st.column_config.NumberColumn(width=110),
-            "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=180),
+            "Speed (knots)": st.column_config.NumberColumn(width=90),
+            "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=90),
         },
     )
 
@@ -154,12 +154,12 @@ with st.container(key="legs_container"):
         column_config={
             "Departure Port": st.column_config.TextColumn(width=120),
             "Arrival Port": st.column_config.TextColumn(width=120),
-            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=75),
-            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0, width=75),
-            "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=75),
-            "Port Days": st.column_config.NumberColumn(min_value=0.0, width=75),
-            "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=75),
-            "Cargo Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, width=85),
+            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=120),
+            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0, width=120),
+            "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=120),
+            "Port Days": st.column_config.NumberColumn(min_value=0.0, width=100),
+            "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=120),
+            "Cargo Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, width=120),
         },
     )
 
@@ -238,20 +238,20 @@ else:
             results_df,
             width="stretch",
             column_config={
-                "Departure Port": st.column_config.TextColumn(width=95),
-                "Arrival Port": st.column_config.TextColumn(width=95),
-                "Sailing Days": st.column_config.NumberColumn(width=65),
-                "Speed (knots)": st.column_config.NumberColumn(width=65),
-                "Distance (nm)": st.column_config.NumberColumn(width=75),
-                "Fuel Type (Sailing)": st.column_config.TextColumn(width=70),
-                "Sailing Fuel (MT)": st.column_config.NumberColumn(width=80),
-                "Port Days": st.column_config.NumberColumn(width=65),
-                "Fuel Type (Port)": st.column_config.TextColumn(width=70),
-                "Port Fuel (MT)": st.column_config.NumberColumn(width=75),
-                "Total Fuel (MT)": st.column_config.NumberColumn(width=80),
-                "CO2 Emissions (t)": st.column_config.NumberColumn(width=85),
-                "Cargo Weight (%)": st.column_config.NumberColumn(width=75),
-                "Cargo Weight (t)": st.column_config.NumberColumn(width=80),
+                "Departure Port": st.column_config.TextColumn(width=100),
+                "Arrival Port": st.column_config.TextColumn(width=100),
+                "Sailing Days": st.column_config.NumberColumn(width=80),
+                "Speed (knots)": st.column_config.NumberColumn(width=80),
+                "Distance (nm)": st.column_config.NumberColumn(width=90),
+                "Fuel Type (Sailing)": st.column_config.TextColumn(width=90),
+                "Sailing Fuel (MT)": st.column_config.NumberColumn(width=90),
+                "Port Days": st.column_config.NumberColumn(width=80),
+                "Fuel Type (Port)": st.column_config.TextColumn(width=90),
+                "Port Fuel (MT)": st.column_config.NumberColumn(width=90),
+                "Total Fuel (MT)": st.column_config.NumberColumn(width=90),
+                "CO2 Emissions (t)": st.column_config.NumberColumn(width=90),
+                "Cargo Weight (%)": st.column_config.NumberColumn(width=90),
+                "Cargo Weight (t)": st.column_config.NumberColumn(width=90),
             },
         )
 
