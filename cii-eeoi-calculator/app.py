@@ -299,7 +299,7 @@ col7, col8, col9 = st.columns(3)
 col7.metric("Attained CII - AER (gCO2/dwt·nm)", f"{cii_attained:.3f}")
 col8.markdown(
     f"""
-    <div style="text-align:center">
+    <div style="text-align:left">
         <div style="font-size:0.875rem;color:gray;">CII Grade</div>
         <div style="font-size:4.5rem;font-weight:700;line-height:1;color:{GRADE_COLOR[grade]};">{grade}</div>
     </div>
