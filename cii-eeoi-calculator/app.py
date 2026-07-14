@@ -154,13 +154,13 @@ with st.container(key="legs_container"):
     legs_df = st.data_editor(
         default_legs,
         num_rows="dynamic",
-        width=1050,
+        width=1200,
         key="legs_table",
         column_config={
             "Departure Port": st.column_config.TextColumn(width=150),
             "Arrival Port": st.column_config.TextColumn(width=150),
-            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=100, alignment="left"),
-            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0, width=100, alignment="left"),
+            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
+            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
             "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150),
             "Port Days": st.column_config.NumberColumn(min_value=0.0, width=100, alignment="left"),
             "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150),
@@ -241,7 +241,7 @@ else:
     with st.container(key="results_container"):
         st.dataframe(
             results_df,
-            width=1650,
+            width=1800,
             column_config={
                 "Departure Port": st.column_config.TextColumn(width=150),
                 "Arrival Port": st.column_config.TextColumn(width=150),
@@ -253,7 +253,7 @@ else:
                 "Port Days": st.column_config.NumberColumn(width=100, alignment="left"),
                 "Fuel Type (Port)": st.column_config.TextColumn(width=150),
                 "Port Fuel (MT)": st.column_config.NumberColumn(width=100, alignment="left"),
-                "Total Fuel (MT)": st.column_config.NumberColumn(width=100, alignment="left"),
+                "Total Fuel (MT)": st.column_config.NumberColumn(width=150, alignment="left"),
                 "CO2 Emissions (t)": st.column_config.NumberColumn(width=150, alignment="left"),
                 "Cargo Weight (t)": st.column_config.NumberColumn(width=150, alignment="left"),
             },
