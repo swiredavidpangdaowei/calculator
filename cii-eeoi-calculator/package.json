@@ -1,0 +1,12 @@
+{
+  "name": "cii-eeoi-report",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Puppeteer script that exports the CII & EEOI Streamlit app as a PDF report.",
+  "scripts": {
+    "report": "node generate_report.js"
+  },
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}

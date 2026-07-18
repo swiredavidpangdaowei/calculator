@@ -1,7 +1,12 @@
+import os
+import subprocess
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy.optimize import curve_fit
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 st.set_page_config(page_title="CII & EEOI Voyage Calculator", layout="wide")
 
@@ -21,6 +26,9 @@ st.markdown(
         padding-top: 1rem !important;
         padding-left: 3rem !important;
         padding-right: 8rem !important;
+    }
+    .st-key-summary_container [data-testid="stHorizontalBlock"] {
+        gap: 0.6rem !important;
     }
     </style>
     """,
@@ -57,10 +65,21 @@ def get_reference_params(ship_type: str, dwt: float):
 
 # Reduction factor Z (%) relative to the 2019 baseline.
 # 2023-2030 values are formally adopted
+# 2031 values onwards are assumed based on a linear projection of reaching 0 in 2050
 Z_FACTORS = {
     2023: 5, 2024: 7, 2025: 9, 2026: 11,
     2027: 13.625, 2028: 16.25, 2029: 18.875, 2030: 21.5,
+    2031: 25.425, 2032: 29.35, 2033: 33.275, 2034: 37.2, 2035: 41.125,
 }
+
+
+def get_z_factor(year: int) -> float:
+    # Reduction factors beyond the last defined year are not yet set; hold
+    # the last known value flat as a placeholder.
+    if year in Z_FACTORS:
+        return Z_FACTORS[year]
+    return Z_FACTORS[max(Z_FACTORS)]
+
 
 FUEL_TYPES = ["HFO", "LFO", "MGO"]
 
@@ -142,8 +161,8 @@ st.caption("Each row is one voyage leg (departure port -> arrival port).")
 default_legs = pd.DataFrame({
     "Departure Port": ["Port A"],
     "Arrival Port": ["Port B"],
+    "Distance (nm)": [1680.0],
     "Sailing Days": [5.0],
-    "Speed (knots)": [14.0],
     "Fuel Type (Sailing)": ["HFO"],
     "Port Days": [2.0],
     "Fuel Type (Port)": ["MGO"],
@@ -159,8 +178,8 @@ with st.container(key="legs_container"):
         column_config={
             "Departure Port": st.column_config.TextColumn(width=150),
             "Arrival Port": st.column_config.TextColumn(width=150),
+            "Distance (nm)": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
             "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
-            "Speed (knots)": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
             "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150),
             "Port Days": st.column_config.NumberColumn(min_value=0.0, width=100, alignment="left"),
             "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150),
@@ -168,7 +187,7 @@ with st.container(key="legs_container"):
         },
     )
 
-legs_df = legs_df.dropna(subset=["Sailing Days", "Speed (knots)", "Port Days", "Cargo Weight (%)"])
+legs_df = legs_df.dropna(subset=["Sailing Days", "Distance (nm)", "Port Days", "Cargo Weight (%)"])
 
 # ---------------------------------------------------------------------------
 # Per-leg calculations
@@ -190,10 +209,12 @@ if len(speeds) >= 3:
 for _, row in legs_df.iterrows():
     sailing_days = float(row["Sailing Days"])
     port_days = float(row["Port Days"])
-    speed = float(row["Speed (knots)"])
+    distance_nm = float(row["Distance (nm)"])
     cargo_pct = float(row["Cargo Weight (%)"])
     sail_fuel_type = row["Fuel Type (Sailing)"]
     port_fuel_type = row["Fuel Type (Port)"]
+
+    speed = distance_nm / (sailing_days * 24.0) if sailing_days > 0 else 0.0
 
     if fit_params is not None:
         me_rate = max(0.0, float(polynomial_fit1(speed, *fit_params)))
@@ -203,8 +224,6 @@ for _, row in legs_df.iterrows():
         me_rate = float(rates[0])
     else:
         me_rate = 0.0
-
-    distance_nm = speed * sailing_days * 24.0
 
     sailing_fuel = (me_rate + aux_consumption) * sailing_days * (1 + weather_pct / 100.0)
     port_fuel = aux_consumption * port_days
@@ -219,7 +238,7 @@ for _, row in legs_df.iterrows():
         "Departure Port": row["Departure Port"],
         "Arrival Port": row["Arrival Port"],
         "Sailing Days": sailing_days,
-        "Speed (knots)": speed,
+        "Speed (knots)": round(speed, 2),
         "Distance (nm)": round(distance_nm, 1),
         "Fuel Type (Sailing)": sail_fuel_type,
         "Sailing Fuel (MT)": round(sailing_fuel, 2),
@@ -285,28 +304,91 @@ grade = cii_grade(cii_ratio, d1, d2, d3, d4)
 
 eeoi = (total_co2 * 1e6) / total_transport_work if total_transport_work > 0 else 0.0
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Sailing Days", f"{total_sailing_days:.1f}")
-col2.metric("Total Port Days", f"{total_port_days:.1f}")
-col3.metric("Total Voyage Days", f"{total_days:.1f}")
+with st.container(key="summary_container"):
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Sailing Days", f"{total_sailing_days:.1f}")
+    col2.metric("Total Port Days", f"{total_port_days:.1f}")
+    col3.metric("Total Voyage Days", f"{total_days:.1f}")
 
-col4, col5, col6 = st.columns(3)
-col4.metric("Total Distance (nm)", f"{total_distance:,.1f}")
-col5.metric("Total CO2 Emissions (t)", f"{total_co2:,.2f}")
-col6.metric("Required CII (gCO2/dwt·nm)", f"{cii_required:.3f}")
+    col4, col5, col6 = st.columns(3)
+    col4.metric("Total Distance (nm)", f"{total_distance:,.1f}")
+    col5.metric("Total CO2 Emissions (t)", f"{total_co2:,.2f}")
+    col6.metric("Required CII (gCO2/dwt·nm)", f"{cii_required:.3f}")
 
-col7, col8, col9 = st.columns(3)
-col7.metric("Attained CII - AER (gCO2/dwt·nm)", f"{cii_attained:.3f}")
-col8.markdown(
-    f"""
-    <div style="text-align:left">
-        <div style="font-size:0.875rem;color:gray;">CII Grade</div>
-        <div style="font-size:4.5rem;font-weight:700;line-height:1;color:{GRADE_COLOR[grade]};">{grade}</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+    col7, col8, col9 = st.columns(3)
+    col7.metric("Attained CII - AER (gCO2/dwt·nm)", f"{cii_attained:.3f}")
+    col8.markdown(
+        f"""
+        <div style="text-align:left">
+            <div style="font-size:0.875rem;color:gray;">CII Grade</div>
+            <div style="font-size:4.5rem;font-weight:700;line-height:1;color:{GRADE_COLOR[grade]};">{grade}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    col9.metric("EEOI (gCO2/t·nm)", f"{eeoi:.3f}")
+
+# ---------------------------------------------------------------------------
+# CII forecast chart
+# ---------------------------------------------------------------------------
+
+st.subheader("5. CII Forecast")
+st.caption(
+    "Projected CII rating for the 5 years starting at the selected CII validation"
 )
-col9.metric("EEOI (gCO2/t·nm)", f"{eeoi:.3f}")
+
+forecast_years = [cii_year + i for i in range(5)]
+forecast_ratios = []
+for yr in forecast_years:
+    z_yr = get_z_factor(yr)
+    req_yr = a * deadweight ** (-c) * (1 - z_yr / 100.0)
+    forecast_ratios.append(cii_attained / req_yr if req_yr > 0 else 0.0)
+
+upper_bound = max(max(forecast_ratios), d4) * 1.25
+lower_bound = 0.75 * min(forecast_ratios)
+
+# Grade bands as specified: A=green, B=teal, C=yellow, D=orange, E=red.
+band_defs = [
+    (0.0, d1, "#2e7d32", "A"),
+    (d1, d2, "#009688", "B"),
+    (d2, d3, "#fdd835", "C"),
+    (d3, d4, "#fb8c00", "D"),
+    (d4, upper_bound, "#d32f2f", "E"),
+]
+
+fig, ax = plt.subplots(figsize=(9, 4.5))
+
+for lo, hi, color, _ in band_defs:
+    ax.axhspan(lo, hi, color=color, alpha=0.18, zorder=0)
+
+ax.step(forecast_years, forecast_ratios, where="mid", color="black", alpha=0.35,
+        linestyle=":", linewidth=1.8, zorder=2)
+ax.plot(forecast_years, forecast_ratios, linestyle="None", marker="o",
+        color="black", markersize=8, zorder=3)
+
+for yr, ratio in zip(forecast_years, forecast_ratios):
+    yr_grade = cii_grade(ratio, d1, d2, d3, d4)
+    ax.annotate(yr_grade, (yr, ratio), textcoords="offset points", xytext=(0, 10),
+                ha="center", va="bottom", fontsize=11, fontweight="bold", color="black", zorder=4)
+
+ax.set_xticks(forecast_years)
+ax.set_xlabel("Year")
+ax.set_ylabel("CII Ratio (Attained / Required)")
+ax.set_ylim(lower_bound, upper_bound)
+ax.set_title(f"{vessel_name} - CII Forecast ({forecast_years[0]}-{forecast_years[-1]})")
+
+legend_handles = [mpatches.Patch(color=color, alpha=0.35, label=f"Grade {label}")
+                  for _, _, color, label in band_defs]
+ax.legend(handles=legend_handles, loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0)
+
+fig.tight_layout()
+st.pyplot(fig)
+
+if forecast_years[-1] > max(Z_FACTORS):
+    st.caption(
+        f"Note: IMO reduction factors are only defined through {max(Z_FACTORS)}. "
+        f"Years after {max(Z_FACTORS)} hold that value flat as a placeholder."
+    )
 
 with st.expander("Assumptions & methodology"):
     st.markdown(f"""
@@ -315,10 +397,58 @@ with st.expander("Assumptions & methodology"):
   Weather effect is applied to sailing fuel only, not to port fuel.
 - **Port fuel (MT)** = auxiliary consumption × port days, using the port fuel type.
 - **CO2 emissions** use IMO carbon factors: HFO = {CARBON_FACTORS['HFO']}, LFO = {CARBON_FACTORS['LFO']}, MGO = {CARBON_FACTORS['MGO']} (t CO2 / t fuel).
-- **Distance per leg** = speed (knots) × sailing days × 24.
+- **Speed per leg** = distance (nm) ÷ (sailing days × 24), derived from the entered distance.
 - **Attained CII (AER)** = total CO2 (g) / (DWT × total distance sailed).
 - **Required CII** = a × DWT⁻ᶜ × (1 − Z/100), reference parameters from IMO MEPC.352(78); Z (reduction factor) from MEPC.354(78) for 2023-2026. **Values for 2027-2030 are not yet formally adopted by IMO and are extrapolated (+2%/year) as a placeholder.**
 - **CII rating boundaries** (A-E) use the IMO d1-d4 multipliers for the selected vessel type. "Liner" uses the container-ship reference line; General Cargo uses the DWT-segmented reference line (< 20,000 DWT vs ≥ 20,000 DWT).
 - **EEOI** = total CO2 (g) / Σ(cargo weight per leg × distance per leg), i.e. grams CO2 per tonne-mile of cargo actually carried.
 - This tool is for **estimation and planning purposes only** and is not a substitute for verified IMO DCS / SEEMP reporting.
 """)
+
+# ---------------------------------------------------------------------------
+# PDF export
+# ---------------------------------------------------------------------------
+
+st.subheader("6. Export")
+st.caption(
+    "Renders this page to a PDF (A4 landscape) via a Node.js/Puppeteer script. "
+    "Requires Node.js, and `npm install` to have been run once in the app folder."
+)
+
+if st.button("Create PDF Report"):
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(app_dir, "generate_report.js")
+    pdf_path = os.path.join(app_dir, "cii_eeoi_report.pdf")
+    port = st.get_option("server.port") or 8501
+    app_url = f"http://localhost:{port}"
+
+    with st.spinner("Launching headless Chrome and rendering the PDF..."):
+        try:
+            result = subprocess.run(
+                ["node", script_path, app_url, pdf_path],
+                cwd=app_dir,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            st.error(
+                "Node.js was not found on this machine. Install Node.js, then run "
+                "`npm install` inside the app folder to enable PDF export."
+            )
+        except subprocess.TimeoutExpired:
+            st.error("PDF generation timed out after 120 seconds.")
+        else:
+            if result.returncode != 0:
+                st.error(f"PDF generation failed:\n```\n{result.stderr}\n```")
+            elif not os.path.exists(pdf_path):
+                st.error("The script reported success but no PDF file was found.")
+            else:
+                st.success("PDF report generated.")
+                with open(pdf_path, "rb") as f:
+                    st.download_button(
+                        "Download PDF Report",
+                        f,
+                        file_name="cii_eeoi_report.pdf",
+                        mime="application/pdf",
+                    )
