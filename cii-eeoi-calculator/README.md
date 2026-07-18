@@ -18,6 +18,21 @@ streamlit run app.py
 4. Deploy — Streamlit Cloud will host it at a public `*.streamlit.app` URL and
    redeploy automatically on every push to the connected branch.
 
+## PDF report
+
+`pdf_report.py` builds an A4-landscape PDF version of the report (tables,
+summary, and CII forecast chart) using reportlab and matplotlib only - no
+browser, no Node.js, so it works the same locally and on Streamlit Cloud.
+Run it directly to generate a sample report from the same default data as
+the app:
+
+```
+python pdf_report.py
+```
+
+`build_pdf_report(...)` in that file can also be imported and called with
+real voyage data to generate a report programmatically.
+
 ## Notes
 
 - CII reference-line parameters and rating boundaries follow IMO MEPC.352(78).

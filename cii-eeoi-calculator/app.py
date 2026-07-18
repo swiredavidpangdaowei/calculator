@@ -1,12 +1,11 @@
-import os
-import subprocess
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+
+from pdf_report import build_pdf_report
 
 st.set_page_config(page_title="CII & EEOI Voyage Calculator", layout="wide")
 
@@ -410,45 +409,25 @@ with st.expander("Assumptions & methodology"):
 # ---------------------------------------------------------------------------
 
 st.subheader("6. Export")
-st.caption(
-    "Renders this page to a PDF (A4 landscape) via a Node.js/Puppeteer script. "
-    "Requires Node.js, and `npm install` to have been run once in the app folder."
-)
+st.caption("Download this voyage as an A4-landscape PDF report (built directly from this "
+           "page's data - no browser, no export controls included in the file itself).")
 
 if st.button("Create PDF Report"):
-    app_dir = os.path.dirname(os.path.abspath(__file__))
-    script_path = os.path.join(app_dir, "generate_report.js")
-    pdf_path = os.path.join(app_dir, "cii_eeoi_report.pdf")
-    port = st.get_option("server.port") or 8501
-    app_url = f"http://localhost:{port}"
-
-    with st.spinner("Launching headless Chrome and rendering the PDF..."):
-        try:
-            result = subprocess.run(
-                ["node", script_path, app_url, pdf_path],
-                cwd=app_dir,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-        except FileNotFoundError:
-            st.error(
-                "Node.js was not found on this machine. Install Node.js, then run "
-                "`npm install` inside the app folder to enable PDF export."
-            )
-        except subprocess.TimeoutExpired:
-            st.error("PDF generation timed out after 120 seconds.")
-        else:
-            if result.returncode != 0:
-                st.error(f"PDF generation failed:\n```\n{result.stderr}\n```")
-            elif not os.path.exists(pdf_path):
-                st.error("The script reported success but no PDF file was found.")
-            else:
-                st.success("PDF report generated.")
-                with open(pdf_path, "rb") as f:
-                    st.download_button(
-                        "Download PDF Report",
-                        f,
-                        file_name="cii_eeoi_report.pdf",
-                        mime="application/pdf",
-                    )
+    with st.spinner("Building PDF..."):
+        pdf_bytes = build_pdf_report(
+            vessel_name=vessel_name,
+            deadweight=deadweight,
+            vessel_type=vessel_type,
+            cii_year=cii_year,
+            weather_pct=weather_pct,
+            aux_consumption=aux_consumption,
+            speed_fuel_df=speed_fuel_df,
+            legs_df=legs_df,
+        )
+    st.success("PDF report generated.")
+    st.download_button(
+        "Download PDF Report",
+        pdf_bytes,
+        file_name="cii_eeoi_report.pdf",
+        mime="application/pdf",
+    )
