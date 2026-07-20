@@ -370,8 +370,8 @@ def build_pdf_report(
         results_df,
         [22, 22, 16, 16, 18, 18, 19, 16, 18, 18, 19, 20, 19],
     ))
-    story.append(Spacer(1, 6))
-    
+    story.append(Spacer(1, 15))
+
     # --- 4. Voyage Summary -------------------------------------------------
     summary_rows = [
         [_metric_cell("Total Sailing Days", f"{summary['total_sailing_days']:.1f}"),
