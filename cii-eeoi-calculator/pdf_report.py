@@ -353,7 +353,7 @@ def build_pdf_report(
     # --- 1. Speed / Fuel Consumption Table -------------------------------
     story.append(Paragraph("1. Speed / Fuel Consumption Table", _heading_style))
     story.append(Paragraph(
-        "Main-engine fuel consumption (MT/day) at a range of speeds (knots). Leg sailing "
+        "ME + AE fuel consumption (MT/day) at a range of speeds (knots). Leg sailing "
         "speeds are fitted from this curve.", _caption_style,
     ))
     story.append(_dataframe_table(speed_fuel_df, [35, 55]))
