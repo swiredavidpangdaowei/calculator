@@ -256,7 +256,7 @@ _heading_style = ParagraphStyle("SectionHeading", parent=_styles["Heading2"], sp
 _caption_style = ParagraphStyle("Caption", parent=_styles["Normal"], fontSize=8, textColor=colors.grey, spaceAfter=6)
 _cell_style = ParagraphStyle("Cell", parent=_styles["Normal"], fontSize=7, leading=9)
 _header_style = ParagraphStyle("CellHeader", parent=_styles["Normal"], fontSize=7, leading=9, textColor=colors.whitesmoke, fontName="Helvetica-Bold")
-_bullet_style = ParagraphStyle("Bullet", parent=_styles["Normal"], fontSize=8.5, leading=12, spaceAfter=4)
+_bullet_style = ParagraphStyle("Bullet", parent=_styles["Normal"], fontSize=5.5, leading=12, spaceAfter=4)
 _metric_label_style = ParagraphStyle("MetricLabel", parent=_styles["Normal"], fontSize=8, textColor=colors.grey)
 _metric_value_style = ParagraphStyle("MetricValue", parent=_styles["Normal"], fontSize=15, fontName="Helvetica-Bold", spaceBefore=1)
 
