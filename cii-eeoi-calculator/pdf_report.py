@@ -36,6 +36,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import (
     Image,
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -363,6 +364,7 @@ def build_pdf_report(
     story.append(_dataframe_table(legs_df, [26, 26, 22, 20, 26, 20, 26, 24]))
 
     # --- 3. Leg Results ------------------------------------------------
+    story.append(PageBreak())
     story.append(Paragraph("3. Leg Results", _heading_style))
     story.append(_dataframe_table(
         results_df,
@@ -387,6 +389,7 @@ def build_pdf_report(
     ]))
 
     # --- 5. CII Forecast -----------------------------------------------
+    story.append(PageBreak())
     chart_buf = render_forecast_chart(vessel_name, forecast_years, forecast_ratios, d1, d2, d3, d4)
     story.append(KeepTogether([
         Paragraph("5. CII Forecast", _heading_style),
