@@ -1,3 +1,5 @@
+import math
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -99,6 +101,25 @@ GRADE_COLOR = {"A": "#2e7d32", "B": "#8bc34a", "C": "#fbc02d", "D": "#fb8c00", "
 def polynomial_fit1(x, a, b, c):
     return a*x**3 + b*x**2 + c
 
+
+def predict_fuel(speed_knots: float, draft_m: float, wind_beaufort: float,
+                  speed_percentage: float, alpha: float, delta: float) -> float:
+    # Log-linear fuel consumption model. Coefficients are model-fitted
+    # constants; alpha/delta are the user-supplied intercept/speed exponent.
+    BETA_WIND = 0.0143316365
+    BETA_DRAFT = 0.0392283333
+    BETA_SPEED_PERCENT = -0.0263525409
+
+    ln_fc = (
+        alpha
+        + BETA_WIND * wind_beaufort
+        + BETA_DRAFT * draft_m
+        + BETA_SPEED_PERCENT * speed_percentage
+        + delta * math.log(speed_knots)
+    )
+
+    return math.exp(ln_fc)
+
 # ---------------------------------------------------------------------------
 # Sidebar - vessel & voyage-wide inputs
 # ---------------------------------------------------------------------------
@@ -116,39 +137,88 @@ with st.sidebar:
     vessel_type = st.selectbox("Vessel type", SHIP_TYPES)
 
     st.header("CII Settings")
-    cii_year = st.selectbox("Year of CII validation", list(range(2023, 2031)), index=1)
-    weather_pct = st.selectbox("Weather effect (adds to sailing fuel consumption)", [0, 5, 10, 15, 20], index=0,
-                                format_func=lambda x: f"{x}%")
-
-    st.header("Auxiliary Consumption")
-    aux_consumption = st.number_input("Auxiliary consumption (MT/day)", min_value=0.0, value=2.0, step=0.1)
+    cii_year = st.selectbox("Year of CII validation", list(range(2026, 2031)), index=0)
 
 # ---------------------------------------------------------------------------
 # Speed / fuel consumption table
 # ---------------------------------------------------------------------------
 
 st.subheader("1. Speed / Fuel Consumption Table")
-st.caption("Enter the main-engine fuel consumption (MT/day) at a range of speeds (knots). "
-           "Leg sailing speeds are interpolated from this curve.")
 
-default_speed_fuel = pd.DataFrame({
-    "Speed (knots)": [10.0, 12.0, 14.0, 16.0, 18.0],
-    "Fuel Consumption (MT/day)": [15.0, 22.0, 31.0, 42.0, 55.0],
-})
+speed_fuel_mode = st.radio(
+    "Input method",
+    ["Manual", "Actual"],
+    horizontal=True,
+    key="speed_fuel_mode",
+)
 
-with st.container(key="speed_fuel_container"):
-    speed_fuel_df = st.data_editor(
-        default_speed_fuel,
-        num_rows="dynamic",
-        width=480,
-        key="speed_fuel_table",
-        column_config={
-            "Speed (knots)": st.column_config.NumberColumn(width=200, alignment="left"),
-            "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=280, alignment="left"),
-        },
-    )
+SPEED_FUEL_COL_CONFIG = {
+    "Speed (knots)": st.column_config.NumberColumn(width=200, alignment="left"),
+    "Fuel Consumption (MT/day)": st.column_config.NumberColumn(width=280, alignment="left"),
+}
 
-speed_fuel_df = speed_fuel_df.dropna().sort_values("Speed (knots)")
+if speed_fuel_mode == "Manual":
+    st.caption("Enter the main-engine fuel consumption (MT/day) at a range of speeds (knots). "
+               "Leg sailing speeds are fitted from this curve.")
+
+    default_speed_fuel = pd.DataFrame({
+        "Speed (knots)": [10.0, 12.0, 14.0, 16.0, 18.0],
+        "Fuel Consumption (MT/day)": [15.0, 22.0, 31.0, 42.0, 55.0],
+    })
+
+    with st.container(key="speed_fuel_container"):
+        speed_fuel_df = st.data_editor(
+            default_speed_fuel,
+            num_rows="dynamic",
+            width=480,
+            key="speed_fuel_table",
+            column_config=SPEED_FUEL_COL_CONFIG,
+        )
+
+    speed_fuel_df = speed_fuel_df.dropna().sort_values("Speed (knots)")
+else:
+    st.caption("Fuel consumption (MT/day) at 10-15 knots is predicted from draft, wind and "
+               "speed % via vessel specific model.")
+
+    pcol1, pcol2, pcol3, pcol4, pcol5 = st.columns(5)
+    wind = pcol1.selectbox("Wind (Beaufort)", [0, 1, 2], index=0, key="predict_wind")
+    speed_percentage = pcol2.selectbox("Speed Percentage (%)", [85, 90, 95, 100], index=3, key="predict_speed_pct")
+    draft = pcol3.number_input("Draft (m)", min_value=5.0, max_value=12.0, value=8.0, step=0.1, key="predict_draft")
+    alpha = pcol4.number_input("Alpha", value=0.0, step=0.0001, format="%.6f", key="predict_alpha")
+    delta = pcol5.number_input("Delta", value=0.0, step=0.0001, format="%.6f", key="predict_delta")
+
+    predicted_speeds = [10, 11, 12, 13, 14, 15]
+    speed_fuel_df = pd.DataFrame({
+        "Speed (knots)": predicted_speeds,
+        "Fuel Consumption (MT/day)": [
+            round(predict_fuel(s, draft, wind, speed_percentage, alpha, delta), 2)
+            for s in predicted_speeds
+        ],
+    })
+
+    with st.container(key="speed_fuel_container"):
+        st.dataframe(
+            speed_fuel_df,
+            width=480,
+            hide_index=True,
+            column_config=SPEED_FUEL_COL_CONFIG,
+        )
+
+# ---------------------------------------------------------------------------
+# Weather effect / auxiliary consumption - rendered after the speed/fuel
+# input method is known, since "Predicted" mode disables weather effect.
+# ---------------------------------------------------------------------------
+
+with st.sidebar:
+    if speed_fuel_mode == "Manual":
+        weather_pct = st.selectbox("Weather Effect (adds to sailing fuel consumption)", [0, 5, 10, 15, 20], index=0,
+                                    format_func=lambda x: f"{x}%")
+    else:
+        weather_pct = 0
+        st.caption("Weather Effect: disabled")
+
+    st.header("Auxiliary Consumption")
+    aux_consumption = st.number_input("Auxiliary consumption (MT/day)", min_value=0.0, value=2.0, step=0.1)
 
 # ---------------------------------------------------------------------------
 # Voyage legs table
@@ -391,9 +461,10 @@ if forecast_years[-1] > max(Z_FACTORS):
 
 with st.expander("Assumptions & methodology"):
     st.markdown(f"""
+- **Speed/fuel table** is either entered manually, or **predicted** at 10-15 knots from a log-linear model: ln(fuel) = alpha + 0.0143316365·wind + 0.0392283333·draft − 0.0263525409·speed% + delta·ln(speed). In Predicted mode, the Weather effect input is disabled since wind is already a model input.
 - **Main-engine sailing fuel** is estimated from a cubic polynomial (a·x³ + b·x² + c) fitted to the speed/fuel table via `scipy.optimize.curve_fit`, evaluated at each leg's sailing speed. Falls back to linear interpolation with only 2 points, or a constant with 1 point.
 - **Sailing fuel (MT)** = (fitted ME rate + auxiliary consumption) × sailing days × (1 + weather effect %).
-  Weather effect is applied to sailing fuel only, not to port fuel.
+  Weather effect is applied to sailing fuel only, not to port fuel, and is always 0% in Predicted mode.
 - **Port fuel (MT)** = auxiliary consumption × port days, using the port fuel type.
 - **CO2 emissions** use IMO carbon factors: HFO = {CARBON_FACTORS['HFO']}, LFO = {CARBON_FACTORS['LFO']}, MGO = {CARBON_FACTORS['MGO']} (t CO2 / t fuel).
 - **Speed per leg** = distance (nm) ÷ (sailing days × 24), derived from the entered distance.
