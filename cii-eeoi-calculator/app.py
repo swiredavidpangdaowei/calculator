@@ -202,6 +202,7 @@ else:
             width=480,
             hide_index=True,
             column_config=SPEED_FUEL_COL_CONFIG,
+            on_select="ignore", 
         )
 
 # ---------------------------------------------------------------------------
