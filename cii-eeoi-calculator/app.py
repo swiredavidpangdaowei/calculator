@@ -659,6 +659,14 @@ if st.button("Create PDF Report"):
             aux_consumption=aux_consumption,
             speed_fuel_df=speed_fuel_df,
             legs_df=legs_df,
+            speed_fuel_mode=speed_fuel_mode,
+            wind=wind if speed_fuel_mode != "Manual" else None,
+            speed_percentage=speed_percentage if speed_fuel_mode != "Manual" else None,
+            alpha=alpha if speed_fuel_mode != "Manual" else None,
+            delta=delta if speed_fuel_mode != "Manual" else None,
+            slope=slope if speed_fuel_mode != "Manual" else None,
+            intercept=intercept if speed_fuel_mode != "Manual" else None,
+            optimization=opt_result if (optimize_choice == "Yes" and opt_result.success) else None,
         )
     st.success("PDF report generated.")
     st.download_button(

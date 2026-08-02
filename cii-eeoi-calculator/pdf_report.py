@@ -17,6 +17,7 @@ generate a sample report from the same default data as the app:
 """
 
 import io
+import math
 from xml.sax.saxutils import escape
 
 import numpy as np
@@ -99,13 +100,37 @@ def polynomial_fit1(x, a, b, c):
     return a * x ** 3 + b * x ** 2 + c
 
 
-def compute_leg_results(speed_fuel_df, legs_df, aux_consumption, weather_pct, deadweight):
-    """Per-leg fuel/emissions table - mirrors app.py's calculation loop."""
+def predict_fuel(speed_knots: float, draft_m: float, wind_beaufort: float,
+                  speed_percentage: float, alpha: float, delta: float) -> float:
+    """Log-linear fuel consumption model used by app.py's Actual mode."""
+    BETA_WIND = 0.0143316365
+    BETA_DRAFT = 0.0392283333
+    BETA_SPEED_PERCENT = -0.0263525409
+
+    speed_knots = max(speed_knots, 1e-6)
+    ln_fc = (
+        alpha
+        + BETA_WIND * wind_beaufort
+        + BETA_DRAFT * draft_m
+        + BETA_SPEED_PERCENT * speed_percentage
+        + delta * math.log(speed_knots)
+    )
+    return math.exp(ln_fc)
+
+
+def compute_leg_results(
+    speed_fuel_df, legs_df, aux_consumption, weather_pct, deadweight,
+    speed_fuel_mode="Manual", wind=None, speed_percentage=None,
+    alpha=None, delta=None, slope=None, intercept=None,
+):
+    """Per-leg fuel/emissions table - mirrors app.py's calculation loop for
+    both Manual mode (cubic curve fit) and Actual mode (log-linear model
+    with a cargo-weight-derived draft per leg)."""
     speeds = speed_fuel_df["Speed (knots)"].to_numpy()
     rates = speed_fuel_df["Fuel Consumption (MT/day)"].to_numpy()
 
     fit_params = None
-    if len(speeds) >= 3:
+    if speed_fuel_mode == "Manual" and len(speeds) >= 3:
         try:
             fit_params, _ = curve_fit(polynomial_fit1, speeds, rates)
         except RuntimeError:
@@ -122,14 +147,23 @@ def compute_leg_results(speed_fuel_df, legs_df, aux_consumption, weather_pct, de
 
         speed = distance_nm / (sailing_days * 24.0) if sailing_days > 0 else 0.0
 
-        if fit_params is not None:
-            me_rate = max(0.0, float(polynomial_fit1(speed, *fit_params)))
-        elif len(speeds) == 2:
-            me_rate = float(np.interp(speed, speeds, rates))
-        elif len(speeds) == 1:
-            me_rate = float(rates[0])
+        if speed_fuel_mode == "Manual":
+            if fit_params is not None:
+                me_rate = max(0.0, float(polynomial_fit1(speed, *fit_params)))
+            elif len(speeds) == 2:
+                me_rate = float(np.interp(speed, speeds, rates))
+            elif len(speeds) == 1:
+                me_rate = float(rates[0])
+            else:
+                me_rate = 0.0
         else:
-            me_rate = 0.0
+            # Actual mode: draft for this leg is derived from its own cargo
+            # weight (slope/intercept), then fed straight into predict_fuel.
+            if speed > 0:
+                intended_draft = slope * cargo_pct + intercept
+                me_rate = max(0.0, predict_fuel(speed, intended_draft, wind, speed_percentage, alpha, delta))
+            else:
+                me_rate = 0.0
 
         sailing_fuel = (me_rate + aux_consumption) * sailing_days * (1 + weather_pct / 100.0)
         port_fuel = aux_consumption * port_days
@@ -200,7 +234,7 @@ def compute_forecast(deadweight, vessel_type, cii_year, cii_attained, years=5):
 # Chart rendering
 # ---------------------------------------------------------------------------
 
-def render_forecast_chart(vessel_name, forecast_years, forecast_ratios, d1, d2, d3, d4):
+def render_forecast_chart(vessel_name, forecast_years, forecast_ratios, d1, d2, d3, d4, title=None):
     upper_bound = max(max(forecast_ratios), d4) * 1.25
     lower_bound = 0.75 * min(forecast_ratios)
 
@@ -231,7 +265,9 @@ def render_forecast_chart(vessel_name, forecast_years, forecast_ratios, d1, d2, 
     ax.set_xlabel("Year")
     ax.set_ylabel("CII Ratio (Attained / Required)")
     ax.set_ylim(lower_bound, upper_bound)
-    ax.set_title(f"{vessel_name} - CII Forecast ({forecast_years[0]}-{forecast_years[-1]})")
+    if title is None:
+        title = f"{vessel_name} - CII Forecast ({forecast_years[0]}-{forecast_years[-1]})"
+    ax.set_title(title)
 
     legend_handles = [mpatches.Patch(color=color, alpha=0.35, label=f"Grade {label}")
                       for _, _, color, label in band_defs]
@@ -311,10 +347,32 @@ def build_pdf_report(
     aux_consumption: float,
     speed_fuel_df: pd.DataFrame,
     legs_df: pd.DataFrame,
+    speed_fuel_mode: str = "Manual",
+    wind=None,
+    speed_percentage=None,
+    alpha=None,
+    delta=None,
+    slope=None,
+    intercept=None,
+    optimization=None,
 ) -> bytes:
-    """Build the full CII & EEOI voyage report PDF and return it as bytes."""
+    """Build the full CII & EEOI voyage report PDF and return it as bytes.
 
-    results_df = compute_leg_results(speed_fuel_df, legs_df, aux_consumption, weather_pct, deadweight)
+    speed_fuel_mode: "Manual" or "Actual", mirrors app.py's Section 1 toggle.
+    wind/speed_percentage/alpha/delta/slope/intercept: only used when
+    speed_fuel_mode is "Actual".
+    optimization: optional voyage_optimizer.OptimizationResult (or any
+    object exposing the same attributes) from app.py's Voyage Optimization
+    section. When given and .success is True, an extra "Voyage Optimization"
+    section is added on its own page, followed by Assumptions & methodology
+    on a further new page.
+    """
+
+    results_df = compute_leg_results(
+        speed_fuel_df, legs_df, aux_consumption, weather_pct, deadweight,
+        speed_fuel_mode=speed_fuel_mode, wind=wind, speed_percentage=speed_percentage,
+        alpha=alpha, delta=delta, slope=slope, intercept=intercept,
+    )
     summary = compute_voyage_summary(results_df, deadweight, vessel_type, cii_year)
     forecast_years, forecast_ratios, (d1, d2, d3, d4) = compute_forecast(
         deadweight, vessel_type, cii_year, summary["cii_attained"]
@@ -356,6 +414,13 @@ def build_pdf_report(
         "ME + AE fuel consumption (MT/day) at a range of speeds (knots). Leg sailing "
         "speeds are fitted from this curve.", _caption_style,
     ))
+    if speed_fuel_mode != "Manual":
+        story.append(Paragraph(
+            f"This table is based on a Beaufort wind value of {wind} and a speed "
+            f"percentage value of {speed_percentage}%, at an average mean draft of "
+            f"7 metres, for illustrative purposes.",
+            _caption_style,
+        ))
     story.append(_dataframe_table(speed_fuel_df, [35, 55]))
 
     # --- 2. Voyage Legs ----------------------------------------------------
@@ -407,16 +472,78 @@ def build_pdf_report(
             _caption_style,
         ))
 
+    # --- 6. Voyage Optimization (optional) --------------------------------
+    if optimization is not None and getattr(optimization, "success", False):
+        story.append(PageBreak())
+        story.append(Paragraph("6. Voyage Optimization", _heading_style))
+
+        reduction_pct = (
+            (1 - optimization.optimized_me_fuel / optimization.baseline_me_fuel) * 100
+            if optimization.baseline_me_fuel > 0 else 0.0
+        )
+        story.append(Paragraph(
+            f"Optimized total ME fuel: {optimization.optimized_me_fuel:,.2f} MT "
+            f"(baseline: {optimization.baseline_me_fuel:,.2f} MT, {reduction_pct:.1f}% reduction). "
+            f"Total voyage duration is unchanged; each leg's sailing and port days moved by at "
+            f"most &plusmn;10%.",
+            _caption_style,
+        ))
+
+        story.append(Paragraph("Optimized Leg Results", _heading_style))
+        story.append(_dataframe_table(
+            optimization.results_df,
+            [22, 22, 16, 16, 18, 18, 19, 16, 18, 18, 19, 20, 19],
+        ))
+        story.append(Spacer(1, 15))
+
+        opt_summary = optimization.summary
+        opt_summary_rows = [
+            [_metric_cell("Total Sailing Days", f"{opt_summary['total_sailing_days']:.1f}"),
+             _metric_cell("Total Port Days", f"{opt_summary['total_port_days']:.1f}"),
+             _metric_cell("Total Voyage Days", f"{opt_summary['total_days']:.1f}")],
+            [_metric_cell("Total Distance (nm)", f"{opt_summary['total_distance']:,.1f}"),
+             _metric_cell("Total CO2 Emissions (t)", f"{opt_summary['total_co2']:,.2f}"),
+             _metric_cell("Required CII (gCO2/dwt·nm)", f"{opt_summary['cii_required']:.3f}")],
+            [_metric_cell("Attained CII - AER (gCO2/dwt·nm)", f"{opt_summary['cii_attained']:.3f}"),
+             _metric_cell("CII Grade", opt_summary["grade"], color=GRADE_COLOR[opt_summary["grade"]]),
+             _metric_cell("EEOI (gCO2/t·nm)", f"{opt_summary['eeoi']:.3f}")],
+        ]
+        story.append(KeepTogether([
+            Paragraph("Optimized Voyage Summary", _heading_style),
+            _metrics_table(opt_summary_rows),
+        ]))
+
+        opt_chart_buf = render_forecast_chart(
+            vessel_name, optimization.forecast_years, optimization.forecast_ratios,
+            opt_summary["d1"], opt_summary["d2"], opt_summary["d3"], opt_summary["d4"],
+            title=(
+                f"{vessel_name} - Optimized CII Forecast "
+                f"({optimization.forecast_years[0]}-{optimization.forecast_years[-1]})"
+            ),
+        )
+        story.append(KeepTogether([
+            Paragraph("Optimized CII Forecast", _heading_style),
+            Image(opt_chart_buf, width=230 * mm, height=107 * mm),
+        ]))
+
+        story.append(PageBreak())
+
     # --- Assumptions & methodology --------------------------------------
     story.append(Paragraph("Assumptions &amp; methodology", _heading_style))
     assumptions = [
-        "<b>Main-engine sailing fuel</b> is estimated from a cubic polynomial "
+        "<b>Speed/fuel table</b> is either entered manually, or shown as <b>Actual</b> mode's "
+        "illustrative table: fuel at 10-15 knots from a log-linear model at a fixed 7m draft. "
+        "In Actual mode, the Weather effect input is disabled since wind is already a model input.",
+        "<b>Main-engine sailing fuel in Manual mode</b> is estimated from a cubic polynomial "
         "(a·x³ + b·x² + c) fitted to the speed/fuel table via "
         "scipy.optimize.curve_fit, evaluated at each leg's sailing speed. Falls back to "
         "linear interpolation with only 2 points, or a constant with 1 point.",
-        "<b>Sailing fuel (MT)</b> = (fitted ME rate + auxiliary consumption) &times; sailing "
+        "<b>Main-engine sailing fuel in Actual mode</b> is instead computed per leg directly "
+        "from the log-linear model, using that leg's own sailing speed and a leg-specific "
+        "draft derived from its cargo weight: draft = slope &times; cargo % + intercept.",
+        "<b>Sailing fuel (MT)</b> = (main-engine rate + auxiliary consumption) &times; sailing "
         "days &times; (1 + weather effect %). Weather effect is applied to sailing fuel "
-        "only, not to port fuel.",
+        "only, not to port fuel, and is always 0% in Actual mode.",
         "<b>Port fuel (MT)</b> = auxiliary consumption &times; port days, using the port fuel type.",
         f"<b>CO2 emissions</b> use IMO carbon factors: HFO = {CARBON_FACTORS['HFO']}, "
         f"LFO = {CARBON_FACTORS['LFO']}, MGO = {CARBON_FACTORS['MGO']} (t CO2 / t fuel).",
@@ -430,6 +557,10 @@ def build_pdf_report(
         "the DWT-segmented reference line (&lt; 20,000 DWT vs &ge; 20,000 DWT).",
         "<b>EEOI</b> = total CO2 (g) / &Sigma;(cargo weight per leg &times; distance per leg), "
         "i.e. grams CO2 per tonne-mile of cargo actually carried.",
+        "<b>Voyage Optimization</b> (optional) uses scipy.optimize.minimize (SLSQP) to "
+        "re-solve per-leg sailing speed - and, within &plusmn;10%, per-leg port time - that "
+        "minimises total main-engine fuel, holding total voyage duration fixed and keeping "
+        "speed within the speed/fuel table's range. Fuel type per leg is not optimized.",
         "This tool is for <b>estimation and planning purposes only</b> and is not a "
         "substitute for verified IMO DCS / SEEMP reporting.",
     ]
