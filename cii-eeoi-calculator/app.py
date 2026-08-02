@@ -190,13 +190,45 @@ else:
 
     DISPLAY_DRAFT_M = 7.0
 
-    pcol1, pcol2, pcol3, pcol4, pcol5, pcol6 = st.columns(6)
-    wind = pcol1.selectbox("Wind (Beaufort)", [0, 1, 2], index=0, key="predict_wind", width=175)
-    speed_percentage = pcol2.selectbox("Speed Percentage (%)", [85, 90, 95, 100], index=3, key="predict_speed_pct", width=175)
-    alpha = pcol3.number_input("Alpha", value=0.0, step=0.0001, format="%.6f", key="predict_alpha", width=175)
-    delta = pcol4.number_input("Delta", value=0.0, step=0.0001, format="%.6f", key="predict_delta", width=175)
-    slope = pcol5.number_input("Slope", value=0.0, step=0.0001, format="%.6f", key="predict_slope", width=175)
-    intercept = pcol6.number_input("Intercept", value=0.0, step=0.0001, format="%.6f", key="predict_intercept", width=175)
+    with st.container(key="predict_inputs_container"):
+        st.markdown(
+            """
+            <style>
+                /* Fix the 6-column input row to a maximum width
+                   regardless of browser zoom level */
+                .st-key-predict_inputs_container div[data-testid="stHorizontalBlock"] {
+                    max-width: 1100px !important;
+                    flex-wrap: nowrap !important;
+                }
+
+                /* Keep each column equal and non-stretching */
+                .st-key-predict_inputs_container div[data-testid="stHorizontalBlock"]
+                > div[data-testid="stColumn"] {
+                    min-width: 150px !important;
+                    max-width: 185px !important;
+                    flex: 1 1 150px !important;
+                }
+
+                /* Fix selectbox and number input widths */
+                .st-key-predict_inputs_container div[data-testid="stHorizontalBlock"]
+                div[data-testid="stSelectbox"] > div,
+                .st-key-predict_inputs_container div[data-testid="stHorizontalBlock"]
+                div[data-testid="stNumberInput"] > div {
+                    min-width: 140px !important;
+                    max-width: 175px !important;
+                }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        pcol1, pcol2, pcol3, pcol4, pcol5, pcol6 = st.columns(6)
+        wind = pcol1.selectbox("Wind (Beaufort)", [0, 1, 2], index=0, key="predict_wind")
+        speed_percentage = pcol2.selectbox("Speed Percentage (%)", [85, 90, 95, 100], index=3, key="predict_speed_pct")
+        alpha = pcol3.number_input("Alpha", value=0.0, step=0.0001, format="%.6f", key="predict_alpha")
+        delta = pcol4.number_input("Delta", value=0.0, step=0.0001, format="%.6f", key="predict_delta")
+        slope = pcol5.number_input("Slope", value=0.0, step=0.0001, format="%.6f", key="predict_slope")
+        intercept = pcol6.number_input("Intercept", value=0.0, step=0.0001, format="%.6f", key="predict_intercept")
 
     predicted_speeds = [10, 11, 12, 13, 14, 15]
     speed_fuel_df = pd.DataFrame({
@@ -252,23 +284,31 @@ default_legs = pd.DataFrame({
     
 with st.container(key="legs_container"):
     legs_df = st.data_editor(
-        default_legs.copy(),
+        default_legs,
         num_rows="dynamic",
         width=1200,
         key="legs_table",
         column_config={
-            "Departure Port": st.column_config.TextColumn(width=150),
-            "Arrival Port": st.column_config.TextColumn(width=150),
-            "Distance (nm)": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
-            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left"),
-            "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150),
-            "Port Days": st.column_config.NumberColumn(min_value=0.0, width=100, alignment="left"),
-            "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150),
-            "Cargo Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, width=150, alignment="left"),
+            "Departure Port": st.column_config.TextColumn(width=150, default=""),
+            "Arrival Port": st.column_config.TextColumn(width=150, default=""),
+            "Distance (nm)": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left", default=0.0),
+            "Sailing Days": st.column_config.NumberColumn(min_value=0.0, width=150, alignment="left", default=0.0),
+            "Fuel Type (Sailing)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150, default="HFO"),
+            "Port Days": st.column_config.NumberColumn(min_value=0.0, width=100, alignment="left", default=0.0),
+            "Fuel Type (Port)": st.column_config.SelectboxColumn(options=FUEL_TYPES, required=True, width=150, default="MGO"),
+            "Cargo Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0, width=150, alignment="left", default=0.0),
         },
     )
 
-legs_df = legs_df.dropna(subset=["Sailing Days", "Distance (nm)", "Port Days", "Cargo Weight (%)"])
+# Newly added rows (via the "+" button) start with these defaults already
+# filled in, but dropna stays as a defensive fallback in case any required
+# cell is manually cleared - without it, a blank/None fuel type crashes the
+# per-leg loop below (CARBON_FACTORS[None]) and silently freezes Leg
+# Results / Optimized Leg Results at their last successful state.
+legs_df = legs_df.dropna(subset=[
+    "Sailing Days", "Distance (nm)", "Port Days", "Cargo Weight (%)",
+    "Fuel Type (Sailing)", "Fuel Type (Port)",
+])
 
 # ---------------------------------------------------------------------------
 # Per-leg calculations
