@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 from pdf_report import build_pdf_report
+from voyage_optimizer import optimize_voyage, render_forecast_figure
 
 st.set_page_config(page_title="CII & EEOI Voyage Calculator", layout="wide")
 
@@ -177,21 +178,31 @@ if speed_fuel_mode == "Manual":
 
     speed_fuel_df = speed_fuel_df.dropna().sort_values("Speed (knots)")
 else:
-    st.caption("Fuel consumption (MT/day) at 10-15 knots is predicted from draft, wind and "
-               "speed % via vessel specific model.")
+    st.markdown(
+        "<div style='font-size:0.875rem; color:gray; line-height:1.3; margin-bottom:0.75rem;'>"
+        "Fuel consumption (MT/day) at 10-15 knots below uses an average draft of 7m for display.<br>"
+        "Sailing fuel consumption is calculated using a vessel-specific performance model, where draft is derived from cargo percentage via a linear loading relationship.<br>"
+        "Alpha and Delta are vessel-specific coefficients from a mixed-effects fuel consumption model fitted to Coach actual models.<br>"
+        "To ensure accurate results, please obtain the correct coefficients for your vessel from the Fleet Efficiency team before use."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-    pcol1, pcol2, pcol3, pcol4, pcol5 = st.columns(5)
-    wind = pcol1.selectbox("Wind (Beaufort)", [0, 1, 2], index=0, key="predict_wind")
-    speed_percentage = pcol2.selectbox("Speed Percentage (%)", [85, 90, 95, 100], index=3, key="predict_speed_pct")
-    draft = pcol3.number_input("Draft (m)", min_value=5.0, max_value=12.0, value=8.0, step=0.1, key="predict_draft")
-    alpha = pcol4.number_input("Alpha", value=0.0, step=0.0001, format="%.6f", key="predict_alpha")
-    delta = pcol5.number_input("Delta", value=0.0, step=0.0001, format="%.6f", key="predict_delta")
+    DISPLAY_DRAFT_M = 7.0
+
+    pcol1, pcol2, pcol3, pcol4, pcol5, pcol6 = st.columns(6)
+    wind = pcol1.selectbox("Wind (Beaufort)", [0, 1, 2], index=0, key="predict_wind", width=175)
+    speed_percentage = pcol2.selectbox("Speed Percentage (%)", [85, 90, 95, 100], index=3, key="predict_speed_pct", width=175)
+    alpha = pcol3.number_input("Alpha", value=0.0, step=0.0001, format="%.6f", key="predict_alpha", width=175)
+    delta = pcol4.number_input("Delta", value=0.0, step=0.0001, format="%.6f", key="predict_delta", width=175)
+    slope = pcol5.number_input("Slope", value=0.0, step=0.0001, format="%.6f", key="predict_slope", width=175)
+    intercept = pcol6.number_input("Intercept", value=0.0, step=0.0001, format="%.6f", key="predict_intercept", width=175)
 
     predicted_speeds = [10, 11, 12, 13, 14, 15]
     speed_fuel_df = pd.DataFrame({
         "Speed (knots)": predicted_speeds,
         "Fuel Consumption (MT/day)": [
-            round(predict_fuel(s, draft, wind, speed_percentage, alpha, delta), 2)
+            round(predict_fuel(s, DISPLAY_DRAFT_M, wind, speed_percentage, alpha, delta), 2)
             for s in predicted_speeds
         ],
     })
@@ -238,10 +249,10 @@ default_legs = pd.DataFrame({
     "Fuel Type (Port)": ["MGO"],
     "Cargo Weight (%)": [80.0],
 })
-
+    
 with st.container(key="legs_container"):
     legs_df = st.data_editor(
-        default_legs,
+        default_legs.copy(),
         num_rows="dynamic",
         width=1200,
         key="legs_table",
@@ -269,8 +280,9 @@ rates = speed_fuel_df["Fuel Consumption (MT/day)"].to_numpy()
 
 # Fit the speed/fuel curve to a cubic polynomial (a*x**3 + b*x**2 + c) via
 # least squares. curve_fit needs at least as many points as parameters (3).
+# Only used in Manual mode - Actual mode computes fuel directly per leg below.
 fit_params = None
-if len(speeds) >= 3:
+if speed_fuel_mode == "Manual" and len(speeds) >= 3:
     try:
         fit_params, _ = curve_fit(polynomial_fit1, speeds, rates)
     except RuntimeError:
@@ -286,14 +298,23 @@ for _, row in legs_df.iterrows():
 
     speed = distance_nm / (sailing_days * 24.0) if sailing_days > 0 else 0.0
 
-    if fit_params is not None:
-        me_rate = max(0.0, float(polynomial_fit1(speed, *fit_params)))
-    elif len(speeds) == 2:
-        me_rate = float(np.interp(speed, speeds, rates))
-    elif len(speeds) == 1:
-        me_rate = float(rates[0])
+    if speed_fuel_mode == "Manual":
+        if fit_params is not None:
+            me_rate = max(0.0, float(polynomial_fit1(speed, *fit_params)))
+        elif len(speeds) == 2:
+            me_rate = float(np.interp(speed, speeds, rates))
+        elif len(speeds) == 1:
+            me_rate = float(rates[0])
+        else:
+            me_rate = 0.0
     else:
-        me_rate = 0.0
+        # Actual mode: draft for this leg is derived from its own cargo
+        # weight (slope/intercept), then fed straight into predict_fuel.
+        if speed > 0:
+            intended_draft = slope * cargo_pct + intercept
+            me_rate = max(0.0, predict_fuel(speed, intended_draft, wind, speed_percentage, alpha, delta))
+        else:
+            me_rate = 0.0
 
     sailing_fuel = (me_rate + aux_consumption) * sailing_days * (1 + weather_pct / 100.0)
     port_fuel = aux_consumption * port_days
@@ -460,12 +481,114 @@ if forecast_years[-1] > max(Z_FACTORS):
         f"Years after {max(Z_FACTORS)} hold that value flat as a placeholder."
     )
 
+# ---------------------------------------------------------------------------
+# Voyage optimization
+# ---------------------------------------------------------------------------
+
+st.subheader("6. Voyage Optimization")
+optimize_choice = st.radio(
+    "Optimize the entire voyage to minimise ME fuel consumption?",
+    ["No", "Yes"],
+    index=0,
+    horizontal=True,
+    key="optimize_voyage_choice",
+)
+
+if optimize_choice == "Yes":
+    with st.spinner("Optimizing voyage (SLSQP)..."):
+        opt_result = optimize_voyage(
+            legs_df=legs_df,
+            speed_fuel_df=speed_fuel_df,
+            aux_consumption=aux_consumption,
+            weather_pct=weather_pct,
+            deadweight=deadweight,
+            vessel_type=vessel_type,
+            cii_year=cii_year,
+            speed_fuel_mode=speed_fuel_mode,
+            wind=wind if speed_fuel_mode != "Manual" else None,
+            speed_percentage=speed_percentage if speed_fuel_mode != "Manual" else None,
+            alpha=alpha if speed_fuel_mode != "Manual" else None,
+            delta=delta if speed_fuel_mode != "Manual" else None,
+            slope=slope if speed_fuel_mode != "Manual" else None,
+            intercept=intercept if speed_fuel_mode != "Manual" else None,
+        )
+
+    if not opt_result.success:
+        st.error(f"Optimization did not converge: {opt_result.message}")
+    else:
+        reduction_pct = (
+            (1 - opt_result.optimized_me_fuel / opt_result.baseline_me_fuel) * 100
+            if opt_result.baseline_me_fuel > 0 else 0.0
+        )
+        st.success(
+            f"Optimized total ME fuel: {opt_result.optimized_me_fuel:,.2f} MT "
+            f"(baseline: {opt_result.baseline_me_fuel:,.2f} MT, {reduction_pct:.1f}% reduction). "
+            f"Total voyage duration is unchanged; each leg's sailing and port days moved by at most ±10%."
+        )
+
+        st.markdown("**Optimized Leg Results**")
+        opt_results_df = opt_result.results_df
+        with st.container(key="optimized_results_container"):
+            st.dataframe(
+                opt_results_df,
+                width=1800,
+                column_config={
+                    "Departure Port": st.column_config.TextColumn(width=150),
+                    "Arrival Port": st.column_config.TextColumn(width=150),
+                    "Sailing Days": st.column_config.NumberColumn(width=100, alignment="left"),
+                    "Speed (knots)": st.column_config.NumberColumn(width=100, alignment="left"),
+                    "Distance (nm)": st.column_config.NumberColumn(width=100, alignment="left"),
+                    "Fuel Type (Sailing)": st.column_config.TextColumn(width=150),
+                    "Sailing Fuel (MT)": st.column_config.NumberColumn(width=150, alignment="left"),
+                    "Port Days": st.column_config.NumberColumn(width=100, alignment="left"),
+                    "Fuel Type (Port)": st.column_config.TextColumn(width=150),
+                    "Port Fuel (MT)": st.column_config.NumberColumn(width=100, alignment="left"),
+                    "Total Fuel (MT)": st.column_config.NumberColumn(width=150, alignment="left"),
+                    "CO2 Emissions (t)": st.column_config.NumberColumn(width=150, alignment="left"),
+                    "Cargo Weight (t)": st.column_config.NumberColumn(width=150, alignment="left"),
+                },
+            )
+
+        st.markdown("**Optimized Voyage Summary**")
+        opt_summary = opt_result.summary
+        with st.container(key="optimized_summary_container"):
+            ocol1, ocol2, ocol3 = st.columns(3)
+            ocol1.metric("Total Sailing Days", f"{opt_summary['total_sailing_days']:.1f}")
+            ocol2.metric("Total Port Days", f"{opt_summary['total_port_days']:.1f}")
+            ocol3.metric("Total Voyage Days", f"{opt_summary['total_days']:.1f}")
+
+            ocol4, ocol5, ocol6 = st.columns(3)
+            ocol4.metric("Total Distance (nm)", f"{opt_summary['total_distance']:,.1f}")
+            ocol5.metric("Total CO2 Emissions (t)", f"{opt_summary['total_co2']:,.2f}")
+            ocol6.metric("Required CII (gCO2/dwt·nm)", f"{opt_summary['cii_required']:.3f}")
+
+            ocol7, ocol8, ocol9 = st.columns(3)
+            ocol7.metric("Attained CII - AER (gCO2/dwt·nm)", f"{opt_summary['cii_attained']:.3f}")
+            ocol8.markdown(
+                f"""
+                <div style="text-align:left">
+                    <div style="font-size:0.875rem;color:gray;">CII Grade</div>
+                    <div style="font-size:4.5rem;font-weight:700;line-height:1;color:{GRADE_COLOR[opt_summary['grade']]};">{opt_summary['grade']}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            ocol9.metric("EEOI (gCO2/t·nm)", f"{opt_summary['eeoi']:.3f}")
+
+        st.markdown("**Optimized CII Forecast**")
+        opt_fig = render_forecast_figure(
+            vessel_name, opt_result.forecast_years, opt_result.forecast_ratios,
+            opt_summary["d1"], opt_summary["d2"], opt_summary["d3"], opt_summary["d4"],
+        )
+        st.pyplot(opt_fig)
+
 with st.expander("Assumptions & methodology"):
     st.markdown(f"""
-- **Speed/fuel table** is either entered manually, or **predicted** at 10-15 knots from a log-linear model: ln(fuel) = alpha + 0.0143316365·wind + 0.0392283333·draft − 0.0263525409·speed% + delta·ln(speed). In Predicted mode, the Weather effect input is disabled since wind is already a model input.
-- **Main-engine sailing fuel** is estimated from a cubic polynomial (a·x³ + b·x² + c) fitted to the speed/fuel table via `scipy.optimize.curve_fit`, evaluated at each leg's sailing speed. Falls back to linear interpolation with only 2 points, or a constant with 1 point.
-- **Sailing fuel (MT)** = (fitted ME rate + auxiliary consumption) × sailing days × (1 + weather effect %).
-  Weather effect is applied to sailing fuel only, not to port fuel, and is always 0% in Predicted mode.
+- **Speed/fuel table** is either entered manually, or shown as **Actual** mode's illustrative table: fuel at 10-15 knots from a log-linear model at a fixed 7m draft: ln(fuel) = alpha + 0.0143316365·wind + 0.0392283333·draft − 0.0263525409·speed% + delta·ln(speed). In Actual mode, the Weather effect input is disabled since wind is already a model input.
+- **Main-engine sailing fuel in Manual mode** is estimated from a cubic polynomial (a·x³ + b·x² + c) fitted to the speed/fuel table via `scipy.optimize.curve_fit`, evaluated at each leg's sailing speed. Falls back to linear interpolation with only 2 points, or a constant with 1 point.
+- **Main-engine sailing fuel in Actual mode** is instead computed per leg directly from the log-linear model, using that leg's own sailing speed and a leg-specific draft derived from its cargo weight: draft = slope × cargo % + intercept.
+- **Sailing fuel (MT)** = (main-engine rate + auxiliary consumption) × sailing days × (1 + weather effect %).
+  Weather effect is applied to sailing fuel only, not to port fuel, and is always 0% in Actual mode.
 - **Port fuel (MT)** = auxiliary consumption × port days, using the port fuel type.
 - **CO2 emissions** use IMO carbon factors: HFO = {CARBON_FACTORS['HFO']}, LFO = {CARBON_FACTORS['LFO']}, MGO = {CARBON_FACTORS['MGO']} (t CO2 / t fuel).
 - **Speed per leg** = distance (nm) ÷ (sailing days × 24), derived from the entered distance.
@@ -473,6 +596,7 @@ with st.expander("Assumptions & methodology"):
 - **Required CII** = a × DWT⁻ᶜ × (1 − Z/100), reference parameters from IMO MEPC.352(78); Z (reduction factor) from MEPC.354(78) for 2023-2026. **Values for 2027-2030 are not yet formally adopted by IMO and are extrapolated (+2%/year) as a placeholder.**
 - **CII rating boundaries** (A-E) use the IMO d1-d4 multipliers for the selected vessel type. "Liner" uses the container-ship reference line; General Cargo uses the DWT-segmented reference line (< 20,000 DWT vs ≥ 20,000 DWT).
 - **EEOI** = total CO2 (g) / Σ(cargo weight per leg × distance per leg), i.e. grams CO2 per tonne-mile of cargo actually carried.
+- **Voyage Optimization** (optional) uses `scipy.optimize.minimize` (SLSQP) to re-solve per-leg sailing speed - and, within ±10%, per-leg port time - that minimises total main-engine fuel, holding total voyage duration fixed and keeping speed within the speed/fuel table's range. Fuel type per leg is not optimized.
 - This tool is for **estimation and planning purposes only** and is not a substitute for verified IMO DCS / SEEMP reporting.
 """)
 
@@ -480,7 +604,7 @@ with st.expander("Assumptions & methodology"):
 # PDF export
 # ---------------------------------------------------------------------------
 
-st.subheader("6. Export")
+st.subheader("7. Export")
 st.caption("Download this voyage as an A4-landscape PDF report (built directly from this "
            "page's data - no browser, no export controls included in the file itself).")
 
