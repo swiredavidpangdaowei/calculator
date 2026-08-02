@@ -322,8 +322,14 @@ def _dataframe_table(df: pd.DataFrame, col_widths_mm) -> Table:
 
 
 def _metric_cell(label, value, color=None):
+    # escape() requires a real str - guard against numpy/pandas scalar types
+    # (e.g. numpy.float64, pandas' Arrow-backed string scalars) that aren't
+    # plain str instances, the same way _p() already does via str(text).
     color_attr = f' color="{color}"' if color else ""
-    html = f'<font size=8 color="grey">{escape(label)}</font><br/><font size=15{color_attr}><b>{escape(value)}</b></font>'
+    html = (
+        f'<font size=8 color="grey">{escape(str(label))}</font><br/>'
+        f'<font size=15{color_attr}><b>{escape(str(value))}</b></font>'
+    )
     return Paragraph(html, _styles["Normal"])
 
 

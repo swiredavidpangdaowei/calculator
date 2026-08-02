@@ -1,6 +1,6 @@
-streamlit>=1.32
-pandas>=2.0
-numpy>=1.24
-scipy>=1.10
-matplotlib>=3.7
-reportlab>=4.0
+streamlit==1.57.0
+pandas==3.0.3
+numpy==2.4.6
+scipy==1.18.0
+matplotlib==3.11.1
+reportlab==5.0.0

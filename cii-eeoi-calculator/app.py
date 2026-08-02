@@ -1,4 +1,5 @@
 import math
+import traceback
 
 import streamlit as st
 import pandas as pd
@@ -650,24 +651,32 @@ st.caption("Download this voyage as an A4-landscape PDF report (built directly f
 
 if st.button("Create PDF Report"):
     with st.spinner("Building PDF..."):
-        pdf_bytes = build_pdf_report(
-            vessel_name=vessel_name,
-            deadweight=deadweight,
-            vessel_type=vessel_type,
-            cii_year=cii_year,
-            weather_pct=weather_pct,
-            aux_consumption=aux_consumption,
-            speed_fuel_df=speed_fuel_df,
-            legs_df=legs_df,
-            speed_fuel_mode=speed_fuel_mode,
-            wind=wind if speed_fuel_mode != "Manual" else None,
-            speed_percentage=speed_percentage if speed_fuel_mode != "Manual" else None,
-            alpha=alpha if speed_fuel_mode != "Manual" else None,
-            delta=delta if speed_fuel_mode != "Manual" else None,
-            slope=slope if speed_fuel_mode != "Manual" else None,
-            intercept=intercept if speed_fuel_mode != "Manual" else None,
-            optimization=opt_result if (optimize_choice == "Yes" and opt_result.success) else None,
-        )
+        try:
+            pdf_bytes = build_pdf_report(
+                vessel_name=vessel_name,
+                deadweight=deadweight,
+                vessel_type=vessel_type,
+                cii_year=cii_year,
+                weather_pct=weather_pct,
+                aux_consumption=aux_consumption,
+                speed_fuel_df=speed_fuel_df,
+                legs_df=legs_df,
+                speed_fuel_mode=speed_fuel_mode,
+                wind=wind if speed_fuel_mode != "Manual" else None,
+                speed_percentage=speed_percentage if speed_fuel_mode != "Manual" else None,
+                alpha=alpha if speed_fuel_mode != "Manual" else None,
+                delta=delta if speed_fuel_mode != "Manual" else None,
+                slope=slope if speed_fuel_mode != "Manual" else None,
+                intercept=intercept if speed_fuel_mode != "Manual" else None,
+                optimization=opt_result if (optimize_choice == "Yes" and opt_result.success) else None,
+            )
+        except Exception as exc:
+            # Streamlit Cloud redacts the real error message by default, so
+            # surface the full traceback directly in the app - otherwise a
+            # PDF-generation bug is impossible to diagnose from the UI alone.
+            st.error(f"PDF generation failed: {exc}")
+            st.code(traceback.format_exc())
+            st.stop()
     st.success("PDF report generated.")
     st.download_button(
         "Download PDF Report",
